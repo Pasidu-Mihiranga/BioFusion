@@ -1,0 +1,29 @@
+[Unit]
+Description=BioFusion Kiosk (Flask scanning station UI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/biofusion/kiosk/server
+Environment="PATH=/var/www/biofusion/venv/bin"
+Environment="HOME=/var/www/biofusion"
+Environment="KIOSK_PORT=8503"
+Environment="KIOSK_PUBLIC_BASE_URL=https://brainstorm.pasidumihiranga.me"
+# Single worker: app.py holds camera/session state in module-level globals.
+# gthread keeps the MJPEG preview endpoint from blocking the whole worker.
+ExecStart=/var/www/biofusion/venv/bin/gunicorn \
+    --bind 127.0.0.1:8503 \
+    --workers 1 \
+    --threads 8 \
+    --worker-class gthread \
+    --timeout 300 \
+    --access-logfile - \
+    app:app
+Restart=always
+RestartSec=5
+MemoryMax=1200M
+
+[Install]
+WantedBy=multi-user.target

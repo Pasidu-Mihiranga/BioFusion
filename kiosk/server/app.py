@@ -18,7 +18,7 @@ from config import (
     CAMERA_INDEX, CAPTURE_WIDTH, CAPTURE_HEIGHT,
     PREVIEW_WIDTH, PREVIEW_HEIGHT, JPEG_QUALITY,
     MODEL_WEIGHTS, CAPTURES_DIR, REPORTS_DIR,
-    HOST, PORT, DEBUG
+    HOST, PORT, DEBUG, PUBLIC_BASE_URL
 )
 from serial_bridge import SerialBridge
 from camera import CameraController
@@ -168,8 +168,8 @@ def capture():
         report_path = None
 
     # Generate QR code
-    local_ip = get_local_ip()
-    report_url = f"http://{local_ip}:{PORT}/api/report/{report_id}"
+    base_url = PUBLIC_BASE_URL or f"http://{get_local_ip()}:{PORT}"
+    report_url = f"{base_url}/api/report/{report_id}"
 
     try:
         qr_image = generate_qr_code(report_url)

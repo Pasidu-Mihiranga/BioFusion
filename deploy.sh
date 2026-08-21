@@ -1,68 +1,144 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# BioFusion — VPS deployment script.
+#
+# Runs ON the server. Idempotent: safe as both first-time setup and as the
+# redeploy step invoked by the GitHub Actions workflow on every push to main.
+#
+#   sudo bash deploy.sh            # full deploy (code + deps + units + nginx)
+#   sudo bash deploy.sh --app-only # skip nginx/systemd file installs
+#
+set -euo pipefail
 
-# BioFusion Pneumonia Detection - Deployment Script
-# VPS Deployment for 152.42.185.253
-
-APP_NAME="biofusion-pneumonia"
-APP_DIR="/var/www/$APP_NAME"
+APP_DIR="${BIOFUSION_DIR:-/var/www/biofusion}"
+REPO="${BIOFUSION_REPO:-https://github.com/Pasidu-Mihiranga/BioFusion.git}"
+BRANCH="${BIOFUSION_BRANCH:-main}"
+DOMAIN="${BIOFUSION_DOMAIN:-brainstorm.pasidumihiranga.me}"
 STREAMLIT_PORT=8502
-PYTHON_VERSION="python3"
+KIOSK_PORT=8503
+SERVICES=(biofusion-streamlit biofusion-kiosk)
 
-echo "=== BioFusion Pneumonia Detection - Deployment ==="
+APP_ONLY=0
+[[ "${1:-}" == "--app-only" ]] && APP_ONLY=1
 
-# Create app directory
-sudo mkdir -p $APP_DIR
-cd $APP_DIR
+log() { echo -e "\n\033[1;34m==>\033[0m $*"; }
 
-# Clone or update repository
-if [ -d ".git" ]; then
-    echo "Updating existing repository..."
-    git pull origin main
+# ── 1. Sync code ─────────────────────────────────────────────────────────────
+log "Syncing code to $APP_DIR ($BRANCH)"
+if [ -d "$APP_DIR/.git" ]; then
+    git -C "$APP_DIR" fetch --all --quiet
+    git -C "$APP_DIR" reset --hard "origin/$BRANCH" --quiet
 else
-    echo "Cloning repository..."
-    git clone https://github.com/KusalPabasara/BioFusion.git .
+    mkdir -p "$APP_DIR"
+    git clone --quiet --branch "$BRANCH" "$REPO" "$APP_DIR"
+fi
+git -C "$APP_DIR" log --oneline -1
+
+# ── 2. Virtualenv + dependencies ─────────────────────────────────────────────
+log "Checking Python environment"
+[ -d "$APP_DIR/venv" ] || python3 -m venv "$APP_DIR/venv"
+
+# Only reinstall when a requirements file actually changed — a full torch
+# install takes minutes on a 1-vCPU droplet.
+DEPS_HASH=$(cat "$APP_DIR/streamlit_app/requirements.txt" "$APP_DIR/kiosk/requirements.txt" | sha256sum | cut -d' ' -f1)
+HASH_FILE="$APP_DIR/.deps-hash"
+
+if [ "$(cat "$HASH_FILE" 2>/dev/null || echo none)" != "$DEPS_HASH" ]; then
+    log "Requirements changed — installing dependencies"
+    # shellcheck disable=SC1091
+    source "$APP_DIR/venv/bin/activate"
+    pip install --upgrade pip --quiet
+    # CPU-only wheels: no GPU on this droplet and the CUDA build is ~2GB
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --quiet
+    grep -viE '^(torch|torchvision)' "$APP_DIR/streamlit_app/requirements.txt"  > /tmp/biofusion-req.txt
+    grep -viE '^(torch|torchvision)' "$APP_DIR/kiosk/requirements.txt"         >> /tmp/biofusion-req.txt
+    pip install -r /tmp/biofusion-req.txt --quiet
+    deactivate
+    echo "$DEPS_HASH" > "$HASH_FILE"
+else
+    log "Dependencies unchanged — skipping install"
 fi
 
-# Create virtual environment
-echo "Setting up Python virtual environment..."
-$PYTHON_VERSION -m venv venv
-source venv/bin/activate
+# ── 3. Model weights ─────────────────────────────────────────────────────────
+# *.pth is gitignored, so weights are uploaded out of band and must survive
+# the `git reset --hard` above (they live outside the worktree's tracked files).
+KIOSK_WEIGHTS="$APP_DIR/kiosk/server/model/pneumonia_resnet50_best.pth"
+mkdir -p "$(dirname "$KIOSK_WEIGHTS")"
+if [ -f "$KIOSK_WEIGHTS" ]; then
+    log "Model weights present ($(du -h "$KIOSK_WEIGHTS" | cut -f1))"
+else
+    log "WARNING: no trained weights at $KIOSK_WEIGHTS — apps run in DEMO MODE (ImageNet weights)"
+fi
 
-# Install dependencies
-echo "Installing dependencies..."
-pip install --upgrade pip
-pip install -r streamlit_app/requirements.txt
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+# ── 4. Runtime dirs + permissions ────────────────────────────────────────────
+log "Setting permissions"
+mkdir -p "$APP_DIR/kiosk/reports" "$APP_DIR/kiosk/captures" "$APP_DIR/kiosk/overlays"
+chown -R www-data:www-data "$APP_DIR"
 
-# Create systemd service file
-echo "Creating systemd service..."
-sudo tee /etc/systemd/system/$APP_NAME.service > /dev/null <<EOF
-[Unit]
-Description=BioFusion Pneumonia Detection Streamlit App
-After=network.target
+# ── 5. systemd units + nginx ─────────────────────────────────────────────────
+if [ "$APP_ONLY" -eq 0 ]; then
+    log "Installing systemd units"
+    for svc in "${SERVICES[@]}"; do
+        install -m 644 "$APP_DIR/deploy/$svc.service" "/etc/systemd/system/$svc.service"
+    done
+    systemctl daemon-reload
+    systemctl enable --quiet "${SERVICES[@]}"
 
-[Service]
-Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=$APP_DIR/streamlit_app
-Environment="PATH=$APP_DIR/venv/bin"
-ExecStart=$APP_DIR/venv/bin/streamlit run app.py --server.port $STREAMLIT_PORT --server.headless true --server.address 127.0.0.1
-Restart=always
-RestartSec=5
+    # certbot rewrites the installed site file in place to add the 443 block.
+    # Overwriting it unconditionally on every deploy would drop TLS, so only
+    # reinstall when the repo's version actually changed, then let certbot
+    # re-apply its config on top.
+    NGINX_SRC="$APP_DIR/deploy/nginx-biofusion.conf"
+    NGINX_HASH=$(sha256sum "$NGINX_SRC" | cut -d' ' -f1)
+    NGINX_HASH_FILE=/etc/nginx/.biofusion-conf-hash
 
-[Install]
-WantedBy=multi-user.target
-EOF
+    if [ "$(cat "$NGINX_HASH_FILE" 2>/dev/null || echo none)" != "$NGINX_HASH" ]; then
+        log "Installing nginx site for $DOMAIN"
+        install -m 644 "$NGINX_SRC" /etc/nginx/sites-available/biofusion
+        ln -sf /etc/nginx/sites-available/biofusion /etc/nginx/sites-enabled/biofusion
 
-# Set permissions
-sudo chown -R www-data:www-data $APP_DIR
+        if [ -f /etc/letsencrypt/live/"$DOMAIN"/fullchain.pem ]; then
+            log "Re-applying certbot TLS config"
+            certbot --nginx -d "$DOMAIN" --non-interactive --keep-until-expiring --redirect
+        fi
+        nginx -t
+        systemctl reload nginx
+        echo "$NGINX_HASH" > "$NGINX_HASH_FILE"
+    else
+        log "nginx config unchanged — leaving TLS config untouched"
+    fi
+fi
 
-# Enable and start service
-sudo systemctl daemon-reload
-sudo systemctl enable $APP_NAME
-sudo systemctl restart $APP_NAME
+# ── 6. Restart services ──────────────────────────────────────────────────────
+log "Restarting services"
+systemctl restart "${SERVICES[@]}"
 
-echo "=== Deployment Complete ==="
-echo "App is running on port $STREAMLIT_PORT"
-echo "Configure nginx to proxy to http://127.0.0.1:$STREAMLIT_PORT"
+# ── 7. Health check ──────────────────────────────────────────────────────────
+log "Health check"
+FAILED=0
+for i in $(seq 1 30); do
+    KIOSK_OK=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$KIOSK_PORT/" || echo 000)
+    ST_OK=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$STREAMLIT_PORT/app/_stcore/health" || echo 000)
+    [ "$KIOSK_OK" = "200" ] && [ "$ST_OK" = "200" ] && break
+    sleep 4
+done
+
+for svc in "${SERVICES[@]}"; do
+    if systemctl is-active --quiet "$svc"; then
+        echo "  OK      $svc"
+    else
+        echo "  FAILED  $svc"
+        journalctl -u "$svc" -n 30 --no-pager
+        FAILED=1
+    fi
+done
+echo "  kiosk     HTTP $KIOSK_OK  (http://127.0.0.1:$KIOSK_PORT/)"
+echo "  streamlit HTTP $ST_OK  (http://127.0.0.1:$STREAMLIT_PORT/app/)"
+[ "$KIOSK_OK" = "200" ] && [ "$ST_OK" = "200" ] || FAILED=1
+
+if [ "$FAILED" -ne 0 ]; then
+    echo -e "\n\033[1;31mDEPLOY FAILED\033[0m"
+    exit 1
+fi
+
+log "Deploy complete — https://$DOMAIN/  (kiosk)  |  https://$DOMAIN/app  (streamlit)"

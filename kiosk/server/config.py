@@ -35,5 +35,9 @@ HOST = os.environ.get("KIOSK_HOST", "0.0.0.0")
 PORT = int(os.environ.get("KIOSK_PORT", "5050"))
 DEBUG = os.environ.get("KIOSK_DEBUG", "false").lower() == "true"
 
+# Public base URL used in QR codes / report links (e.g. https://kiosk.example.com).
+# Leave unset for local hardware use — the app then falls back to the LAN IP:port.
+PUBLIC_BASE_URL = os.environ.get("KIOSK_PUBLIC_BASE_URL", "").rstrip("/")
+
 # ─── UI ──────────────────────────────────────────────────────────────────────
 AUTO_RESET_SECONDS = 60  # auto-reset to idle after this many seconds

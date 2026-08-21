@@ -1,0 +1,103 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys touch the droplet at once.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Byte-compile application code
+        run: |
+          python -m compileall -q streamlit_app kiosk/server train_model.py
+
+      - name: Validate deployment scripts
+        run: |
+          bash -n deploy.sh
+          bash -n deploy/ci-deploy-wrapper.sh
+
+      - name: Validate systemd units
+        run: |
+          # systemd-analyze verify needs the referenced binaries to exist, so
+          # just assert the units are well-formed and point at the right paths.
+          for f in deploy/*.service; do
+            grep -q '^\[Unit\]'    "$f" || { echo "$f: missing [Unit]";    exit 1; }
+            grep -q '^\[Service\]' "$f" || { echo "$f: missing [Service]"; exit 1; }
+            grep -q '^\[Install\]' "$f" || { echo "$f: missing [Install]"; exit 1; }
+            grep -q 'ExecStart='   "$f" || { echo "$f: missing ExecStart";  exit 1; }
+          done
+
+      - name: Validate nginx config syntax
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq nginx
+          sudo cp deploy/nginx-biofusion.conf /etc/nginx/sites-available/biofusion
+          sudo ln -sf /etc/nginx/sites-available/biofusion /etc/nginx/sites-enabled/biofusion
+          sudo nginx -t
+
+      - name: Check requirements files are parseable
+        run: |
+          pip install --dry-run --quiet --report /dev/null -r streamlit_app/requirements.txt >/dev/null 2>&1 || true
+          python - <<'PY'
+          import re, pathlib
+          for p in ["streamlit_app/requirements.txt", "kiosk/requirements.txt"]:
+              for line in pathlib.Path(p).read_text().splitlines():
+                  line = line.strip()
+                  if not line or line.startswith("#"):
+                      continue
+                  assert re.match(r"^[A-Za-z0-9_.\-]+(\[[a-z,]+\])?\s*([<>=!~]=?.*)?$", line), f"{p}: bad line {line!r}"
+          print("requirements OK")
+          PY
+
+  deploy:
+    name: Deploy to VPS
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: |
+          # The key is pinned to a forced command on the server, so the payload
+          # here is ignored — it only triggers the deploy of origin/main.
+          ssh -i ~/.ssh/deploy_key \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=15 \
+              "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" deploy
+
+      - name: Verify site is live
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' https://brainstorm.pasidumihiranga.me/ || echo 000)
+            app=$(curl -sS -o /dev/null -w '%{http_code}' https://brainstorm.pasidumihiranga.me/app/_stcore/health || echo 000)
+            echo "attempt $i: kiosk=$code streamlit=$app"
+            if [ "$code" = "200" ] && [ "$app" = "200" ]; then
+              echo "Both apps responding."
+              exit 0
+            fi
+            sleep 6
+          done
+          echo "Site did not come up in time."
+          exit 1
