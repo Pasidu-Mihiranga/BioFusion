@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import ui
-from utils.device import is_mobile, render_mobile_navbar
+from utils.device import is_mobile, init_device, render_mobile_navbar
 
 # Load real metrics produced by train_model.py (training_metrics.json at the
 # project root) when available; otherwise fall back to the documented baseline.
@@ -38,6 +38,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Probe the viewport once per run, before any is_mobile() call.
+init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Model")

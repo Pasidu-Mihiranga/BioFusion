@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import ui
-from utils.device import is_mobile, render_mobile_navbar
+from utils.device import is_mobile, init_device, render_mobile_navbar
 
 # Page config
 st.set_page_config(
@@ -19,6 +19,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Probe the viewport once per run, before any is_mobile() call.
+init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Dataset")

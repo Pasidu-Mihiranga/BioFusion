@@ -45,9 +45,12 @@ def _load_landing_metrics():
 st.set_page_config(page_title="BioFusion — Pneumonia Screening",
                    layout="wide", initial_sidebar_state="collapsed")
 
-from utils.device import is_mobile
+from utils.device import is_mobile, init_device
 # if is_mobile():
 #     st.switch_page("pages/1_Live_Prediction.py")
+
+# Probe the viewport once per run, before any is_mobile() call.
+init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Home")

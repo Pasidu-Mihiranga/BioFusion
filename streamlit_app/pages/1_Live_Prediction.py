@@ -22,10 +22,13 @@ from utils import (load_model, predict, preprocess_image, load_image,
                    assess_quality, triage, ui)
 import importlib
 importlib.reload(ui)
-from utils.device import is_mobile, render_mobile_navbar
+from utils.device import is_mobile, init_device, render_mobile_navbar
 
 st.set_page_config(page_title="Screening | BioFusion", page_icon="🫁",
                    layout="wide", initial_sidebar_state="collapsed")
+
+# Probe the viewport once per run, before any is_mobile() call.
+init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Screening")
