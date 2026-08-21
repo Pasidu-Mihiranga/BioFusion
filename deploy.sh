@@ -91,6 +91,15 @@ if [ "$APP_ONLY" -eq 0 ]; then
     # reinstall when the repo's version actually changed, then let certbot
     # re-apply its config on top.
     NGINX_SRC="$APP_DIR/deploy/nginx-biofusion.conf"
+
+    # The config references certbot's cert paths, so installing it without a
+    # certificate present would make `nginx -t` fail and take the site down.
+    if grep -q "listen 443" "$NGINX_SRC" && [ ! -f /etc/letsencrypt/live/"$DOMAIN"/fullchain.pem ]; then
+        echo "ERROR: $NGINX_SRC expects a certificate for $DOMAIN but none exists."
+        echo "Run: certbot --nginx -d $DOMAIN"
+        exit 1
+    fi
+
     NGINX_HASH=$(sha256sum "$NGINX_SRC" | cut -d' ' -f1)
     NGINX_HASH_FILE=/etc/nginx/.biofusion-conf-hash
 
@@ -99,7 +108,9 @@ if [ "$APP_ONLY" -eq 0 ]; then
         install -m 644 "$NGINX_SRC" /etc/nginx/sites-available/biofusion
         ln -sf /etc/nginx/sites-available/biofusion /etc/nginx/sites-enabled/biofusion
 
-        if [ -f /etc/letsencrypt/live/"$DOMAIN"/fullchain.pem ]; then
+        # The repo config carries the TLS block itself, so certbot only needs to
+        # run if the site file somehow lacks one.
+        if ! grep -q "listen 443" /etc/nginx/sites-available/biofusion; then
             log "Re-applying certbot TLS config"
             certbot --nginx -d "$DOMAIN" --non-interactive --keep-until-expiring --redirect
         fi
