@@ -35,6 +35,31 @@ logger = logging.getLogger(__name__)
 # ─── Flask App ───────────────────────────────────────────────────────────────
 app = Flask(__name__)
 
+# ─── Static asset caching ────────────────────────────────────────────────────
+# Flask defaults to Cache-Control: no-cache, which costs a revalidation
+# round-trip per asset on every page load. Static filenames here are stable, so
+# serve them with a long max-age and cache-bust via the asset_v query stamp
+# below, which changes whenever a static file is modified.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 31536000  # 1 year
+
+
+def _asset_version():
+    """Stamp from the newest static file mtime, so a deploy invalidates caches."""
+    newest = 0.0
+    for root, _dirs, files in os.walk(app.static_folder):
+        for name in files:
+            newest = max(newest, os.path.getmtime(os.path.join(root, name)))
+    return str(int(newest))
+
+
+ASSET_VERSION = _asset_version()
+
+
+@app.context_processor
+def inject_asset_version():
+    return {"asset_v": ASSET_VERSION}
+
+
 # ─── Hardware Initialization ─────────────────────────────────────────────────
 serial_bridge = SerialBridge(port=SERIAL_PORT, baud_rate=BAUD_RATE, timeout=SERIAL_TIMEOUT)
 camera = CameraController(
@@ -230,7 +255,9 @@ def serve_image(filename):
     for directory in [CAPTURES_DIR, REPORTS_DIR]:
         filepath = os.path.join(directory, os.path.basename(filename))
         if os.path.exists(filepath):
-            return send_file(filepath)
+            # Filenames carry a report id or capture timestamp, so they are
+            # immutable once written and safe to cache hard.
+            return send_file(filepath, max_age=31536000)
     return "Image not found", 404
 
 

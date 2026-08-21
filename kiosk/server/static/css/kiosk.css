@@ -208,7 +208,7 @@ body {
     font-family: var(--font-ui);
     border: none;
     cursor: pointer;
-    transition: background 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
     text-decoration: none;
     touch-action: manipulation;
 }
@@ -768,8 +768,33 @@ body {
     to { transform: rotate(360deg); }
 }
 
+/* ─── State transitions ──────────────────────────────────────────────────── */
+/* htmx holds .htmx-swapping on the target for the duration declared by
+   hx-swap="innerHTML swap:0.18s", which gives the outgoing state a fade-out to
+   pair with the bf-rise fade-in the incoming state already animates. */
+#kiosk-content {
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+#kiosk-content.htmx-swapping {
+    opacity: 0;
+    transform: translateY(-4px);
+}
+
+/* Settle step: htmx applies .htmx-added to freshly inserted nodes. */
+#kiosk-content.htmx-settling {
+    opacity: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .kiosk-state, .result-badge, .qr-section { animation: none; }
+
+    #kiosk-content,
+    #kiosk-content.htmx-swapping {
+        transition: none;
+        opacity: 1;
+        transform: none;
+    }
 }
 
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
