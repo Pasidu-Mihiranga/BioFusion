@@ -46,6 +46,16 @@ jobs:
       - name: Validate nginx config syntax
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq nginx
+
+          # The site config carries certbot's TLS block, and nginx -t actually
+          # opens those files. Stub them so the real config is validated as
+          # written rather than with the TLS block stripped out.
+          DOMAIN=brainstorm.pasidumihiranga.me
+          sudo mkdir -p /etc/letsencrypt/live/$DOMAIN
+          sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1             -subj "/CN=$DOMAIN"             -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem             -out    /etc/letsencrypt/live/$DOMAIN/fullchain.pem 2>/dev/null
+          sudo openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 1024 2>/dev/null
+          echo 'ssl_protocols TLSv1.2 TLSv1.3;' | sudo tee /etc/letsencrypt/options-ssl-nginx.conf >/dev/null
+
           sudo cp deploy/nginx-biofusion.conf /etc/nginx/sites-available/biofusion
           sudo ln -sf /etc/nginx/sites-available/biofusion /etc/nginx/sites-enabled/biofusion
           sudo nginx -t
