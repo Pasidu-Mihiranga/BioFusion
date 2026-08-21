@@ -53,7 +53,9 @@ jobs:
           DOMAIN=brainstorm.pasidumihiranga.me
           sudo mkdir -p /etc/letsencrypt/live/$DOMAIN
           sudo openssl req -x509 -newkey rsa:2048 -nodes -days 1             -subj "/CN=$DOMAIN"             -keyout /etc/letsencrypt/live/$DOMAIN/privkey.pem             -out    /etc/letsencrypt/live/$DOMAIN/fullchain.pem 2>/dev/null
-          sudo openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 1024 2>/dev/null
+          # Named group is instant; generating fresh 2048-bit params is slow and
+          # anything smaller is rejected by OpenSSL 3's security level.
+          sudo openssl genpkey -genparam -algorithm DH -pkeyopt group:ffdhe2048 \n            -out /etc/letsencrypt/ssl-dhparams.pem \n            || sudo openssl dhparam -out /etc/letsencrypt/ssl-dhparams.pem 2048
           echo 'ssl_protocols TLSv1.2 TLSv1.3;' | sudo tee /etc/letsencrypt/options-ssl-nginx.conf >/dev/null
 
           sudo cp deploy/nginx-biofusion.conf /etc/nginx/sites-available/biofusion
