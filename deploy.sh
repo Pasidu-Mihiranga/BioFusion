@@ -64,13 +64,19 @@ fi
 # ── 3. Model weights ─────────────────────────────────────────────────────────
 # *.pth is gitignored, so weights are uploaded out of band and must survive
 # the `git reset --hard` above (they live outside the worktree's tracked files).
-KIOSK_WEIGHTS="$APP_DIR/kiosk/server/model/pneumonia_resnet50_best.pth"
-mkdir -p "$(dirname "$KIOSK_WEIGHTS")"
-if [ -f "$KIOSK_WEIGHTS" ]; then
-    log "Model weights present ($(du -h "$KIOSK_WEIGHTS" | cut -f1))"
-else
-    log "WARNING: no trained weights at $KIOSK_WEIGHTS — apps run in DEMO MODE (ImageNet weights)"
-fi
+MODELS_DIR="$APP_DIR/models"
+mkdir -p "$MODELS_DIR"
+log "Checking model weights in $MODELS_DIR"
+MISSING=0
+for w in pneumonia_resnet50_best.pth pneumonia_resnet50_combined_noPhone.pth; do
+    if [ -f "$MODELS_DIR/$w" ]; then
+        echo "  present  $w ($(du -h "$MODELS_DIR/$w" | cut -f1))"
+    else
+        echo "  MISSING  $w — that capture path falls back to DEMO MODE (ImageNet weights)"
+        MISSING=1
+    fi
+done
+[ "$MISSING" -eq 0 ] || echo "  Upload with: scp <file> root@<host>:$MODELS_DIR/"
 
 # ── 4. Runtime dirs + permissions ────────────────────────────────────────────
 log "Setting permissions"

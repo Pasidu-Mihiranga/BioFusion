@@ -10,6 +10,7 @@ guidance, never as a diagnosis.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -41,13 +42,33 @@ if not is_mobile():
     st.divider()
 
 # --- model + fail-safe threshold ------------------------------------------- #
-WEIGHTS_PATH = Path(__file__).parent.parent.parent / "pneumonia_resnet50_best.pth"
+REPO_ROOT = Path(__file__).parent.parent.parent
+MODELS_DIR = Path(os.environ.get("BIOFUSION_MODELS_DIR", REPO_ROOT / "models"))
+
+# Two checkpoints, matched to how the image was captured. The phone-augmented
+# model was trained with phone-photo augmentation so it tolerates glare, skew
+# and screen moire; the other was trained without it and suits clean digital
+# radiographs.
+WEIGHTS = {
+    "photo":  MODELS_DIR / "pneumonia_resnet50_best.pth",
+    "direct": MODELS_DIR / "pneumonia_resnet50_combined_noPhone.pth",
+}
+# Older single-checkpoint layout, kept so a local checkout without models/ works.
+LEGACY_WEIGHTS = REPO_ROOT / "pneumonia_resnet50_best.pth"
 METRICS_PATH = Path(__file__).parent.parent.parent / "training_metrics.json"
 
 
 @st.cache_resource
-def get_model():
-    weights = str(WEIGHTS_PATH) if WEIGHTS_PATH.exists() else None
+def get_model(kind: str):
+    """Load the checkpoint for `kind` ("photo" or "direct"), cached per kind.
+
+    Cached per kind rather than globally so only the models actually used are
+    resident — each ResNet50 is ~100MB and the droplet has under 1GB of RAM.
+    """
+    path = WEIGHTS[kind]
+    if not path.exists() and LEGACY_WEIGHTS.exists():
+        path = LEGACY_WEIGHTS
+    weights = str(path) if path.exists() else None
     model, device = load_model(weights)
     return model, device, weights is not None
 
@@ -64,8 +85,6 @@ def get_threshold():
     return 0.5
 
 
-with st.spinner("Starting the screening engine…"):
-    model, device, using_trained_weights = get_model()
 threshold = get_threshold()
 
 # --- flow control ----------------------------------------------------------- #
@@ -88,6 +107,11 @@ def run_analysis_and_render_results(captured, is_photo, clinician, mobile):
 
     # 3 · Staged analysis animation
     state = {}
+
+    # The capture path decides the checkpoint: photos of film go to the
+    # phone-augmented model, digital uploads to the direct-radiograph one.
+    with st.spinner("Starting the screening engine…"):
+        model, device, _trained = get_model("photo" if is_photo else "direct")
 
     def _prepare():
         if is_photo:

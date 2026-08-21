@@ -75,6 +75,22 @@ On the VPS the kiosk sets `KIOSK_PUBLIC_BASE_URL` so QR codes and report links p
 
 CI authenticates with a dedicated SSH key pinned to a forced command (`/usr/local/bin/biofusion-deploy`) in root's `authorized_keys`, so the key can only trigger a deploy of `origin/main` — not run arbitrary commands. Repo secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`.
 
-**Note:** `*.pth` is gitignored, so no trained weights are in the repo — the deployed apps currently run in **demo mode** on raw ImageNet weights. Upload weights to `/var/www/biofusion/kiosk/server/model/pneumonia_resnet50_best.pth`; they live outside tracked files and survive the deploy's `git reset --hard`.
+### Model weights
+
+`*.pth` is gitignored, so weights are never in the repo. Both apps read them from a shared `models/` directory at the repo root (override with `BIOFUSION_MODELS_DIR`), which sits outside tracked files and survives the deploy's `git reset --hard`:
+
+| File | Used for |
+|---|---|
+| `pneumonia_resnet50_best.pth` | Phone/camera photos of film — trained with phone-photo augmentation |
+| `pneumonia_resnet50_combined_noPhone.pth` | Direct digital radiograph uploads |
+
+The Live Prediction page picks between them from the existing `is_photo` flag and caches each with `@st.cache_resource` keyed by kind, so only the checkpoints actually used are resident (~100MB each on a <1GB box). The kiosk photographs film under a light box, so it always uses the phone-augmented checkpoint. Either app falls back to ImageNet **demo mode** when its checkpoint is absent.
+
+**The mapping above is inferred from the filenames** — the checkpoints carry no embedded training metadata. If `combined_noPhone` turns out to be the phone-robust one, swap the two paths in `WEIGHTS` in `pages/1_Live_Prediction.py` and `MODEL_WEIGHTS` in `kiosk/server/config.py`.
+
+Upload with:
+```bash
+scp -i ~/.ssh/<key> models/*.pth root@159.65.1.78:/var/www/biofusion/models/
+```
 
 The legacy root `nginx.conf` is the older single-app Streamlit reference config and is not what production uses.
