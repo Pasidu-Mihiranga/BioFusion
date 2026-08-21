@@ -44,6 +44,10 @@ init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Model")
+
+# Fixed-position navbar — render early so it does not vanish during the rerun.
+if is_mobile():
+    render_mobile_navbar("Insights")
 if not is_mobile():
     st.divider()
 
@@ -261,5 +265,3 @@ with col2:
     fig_acc.update_layout(title="Accuracy", height=280, margin=dict(l=10, r=10, t=40, b=10), font=dict(family="Helvetica, Arial, sans-serif"), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_acc, use_container_width=True)
 
-if is_mobile():
-    render_mobile_navbar("Insights")

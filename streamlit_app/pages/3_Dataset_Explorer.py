@@ -25,6 +25,10 @@ init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Dataset")
+
+# Fixed-position navbar — render early so it does not vanish during the rerun.
+if is_mobile():
+    render_mobile_navbar("Dataset")
 if not is_mobile():
     st.divider()
 
@@ -125,5 +129,3 @@ for col, (title, desc) in zip(quality_cols, quality_metrics):
         </div>
         """, unsafe_allow_html=True)
 
-if is_mobile():
-    render_mobile_navbar("Dataset")

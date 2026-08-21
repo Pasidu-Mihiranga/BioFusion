@@ -32,6 +32,11 @@ init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Screening")
+
+# Fixed-position navbar, so DOM order is irrelevant to placement. Rendering it
+# ahead of get_model() keeps it on screen while the model is still loading.
+if is_mobile():
+    render_mobile_navbar("Prediction")
 if not is_mobile():
     st.divider()
 
@@ -404,7 +409,6 @@ if mobile:
                 st.session_state.mobile_captured_bytes = None
                 st.rerun()
 
-    render_mobile_navbar("Prediction")
 
 else:
     # --- Desktop Single-Page Flow ---

@@ -45,7 +45,7 @@ def _load_landing_metrics():
 st.set_page_config(page_title="BioFusion — Pneumonia Screening",
                    layout="wide", initial_sidebar_state="collapsed")
 
-from utils.device import is_mobile, init_device
+from utils.device import is_mobile, init_device, render_mobile_navbar
 # if is_mobile():
 #     st.switch_page("pages/1_Live_Prediction.py")
 
@@ -54,6 +54,12 @@ init_device()
 
 ui.inject_theme()
 ui.top_nav(active="Home")
+
+# The mobile navbar is position:fixed, so where it sits in the DOM does not
+# affect where it renders. Emitting it first keeps it on screen while the rest
+# of the page is still being built, instead of popping in at the very end.
+if is_mobile():
+    render_mobile_navbar("Home")
 
 if is_mobile() and not st.session_state.get('install_dismissed', False):
     c1, c2 = st.columns([0.85, 0.15])
@@ -305,13 +311,3 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.caption("BioFusion 2026 · Team GMora · Built with PyTorch")
-
-from utils.device import is_mobile, render_mobile_navbar
-import sys
-import importlib
-if "utils.device" in sys.modules:
-    importlib.reload(sys.modules["utils.device"])
-from utils.device import render_mobile_navbar # re-import the reloaded function
-
-if is_mobile():
-    render_mobile_navbar("Home")
