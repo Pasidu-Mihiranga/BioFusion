@@ -10,6 +10,10 @@ set -euo pipefail
 
 APP_DIR=/var/www/biofusion
 
+# The worktree is owned by www-data but git runs here as root, which
+# otherwise trips git's "dubious ownership" check.
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+
 cd "$APP_DIR"
 git fetch --all --quiet
 git reset --hard origin/main --quiet

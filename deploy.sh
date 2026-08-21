@@ -25,6 +25,8 @@ log() { echo -e "\n\033[1;34m==>\033[0m $*"; }
 
 # ── 1. Sync code ─────────────────────────────────────────────────────────────
 log "Syncing code to $APP_DIR ($BRANCH)"
+# Worktree is owned by www-data, git runs as root — see "dubious ownership".
+git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
 if [ -d "$APP_DIR/.git" ]; then
     git -C "$APP_DIR" fetch --all --quiet
     git -C "$APP_DIR" reset --hard "origin/$BRANCH" --quiet
