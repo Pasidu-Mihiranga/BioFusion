@@ -4,6 +4,8 @@ Main entry point for the hospital kiosk web interface.
 """
 
 import os
+import sys
+import glob
 import socket
 import logging
 from datetime import datetime
@@ -18,7 +20,7 @@ from config import (
     CAMERA_INDEX, CAPTURE_WIDTH, CAPTURE_HEIGHT,
     PREVIEW_WIDTH, PREVIEW_HEIGHT, JPEG_QUALITY,
     MODEL_WEIGHTS, CAPTURES_DIR, REPORTS_DIR,
-    HOST, PORT, DEBUG, PUBLIC_BASE_URL
+    HOST, PORT, DEBUG, PUBLIC_BASE_URL, CAPTURE_MODE as CAPTURE_MODE_SETTING
 )
 from serial_bridge import SerialBridge
 from camera import CameraController
@@ -55,9 +57,28 @@ def _asset_version():
 ASSET_VERSION = _asset_version()
 
 
+def _resolve_capture_mode(mode):
+    """Turn "auto" into a concrete mode by looking for a local video device."""
+    if mode in ("hardware", "browser"):
+        return mode
+    if sys.platform.startswith("linux") and not glob.glob("/dev/video*"):
+        # A headless server (a cloud VM) has no camera of its own, so the only
+        # way to get an image is for the visitor's browser to supply one.
+        return "browser"
+    return "hardware"
+
+
+CAPTURE_MODE = _resolve_capture_mode(CAPTURE_MODE_SETTING)
+
+
 @app.context_processor
 def inject_asset_version():
-    return {"asset_v": ASSET_VERSION}
+    return {
+        "asset_v": ASSET_VERSION,
+        "capture_mode": CAPTURE_MODE,
+        # Where "Start screening" points, so templates stay mode-agnostic.
+        "scan_endpoint": "/api/scan" if CAPTURE_MODE == "hardware" else "/api/browser-preview",
+    }
 
 
 # ─── Hardware Initialization ─────────────────────────────────────────────────
@@ -148,20 +169,11 @@ def video_feed():
     return response
 
 
-@app.route("/api/capture", methods=["POST"])
-def capture():
-    """Capture a photo and start analysis."""
-    camera.stop_preview()
+def _analyse_and_render(capture_path, pil_image):
+    """Inference, report, QR and results partial.
 
-    capture_path, pil_image = camera.capture()
-    if capture_path is None:
-        serial_bridge.set_status("idle")
-        serial_bridge.lights_off()
-        return render_template("partials/status.html",
-                               status="error",
-                               message="Capture failed. Please try again."), 500
-
-    serial_bridge.lights_off()
+    Shared by both capture paths: the hardware camera and the browser upload.
+    """
     serial_bridge.set_status("process")
     session["state"] = "analyzing"
     session["capture_path"] = capture_path
@@ -226,7 +238,7 @@ def capture():
     overlay_path = os.path.join(REPORTS_DIR, overlay_filename)
     Image.fromarray(overlay.astype(np.uint8)).save(overlay_path)
 
-    # Release camera
+    # No-op in browser mode, where the camera was never opened
     camera.release()
 
     return render_template("partials/results.html",
@@ -236,6 +248,62 @@ def capture():
                            qr_path=qr_path,
                            report_id=report_id,
                            report_url=report_url)
+
+
+@app.route("/api/capture", methods=["POST"])
+def capture():
+    """Capture a photo with the kiosk's own webcam and start analysis."""
+    camera.stop_preview()
+
+    capture_path, pil_image = camera.capture()
+    if capture_path is None:
+        serial_bridge.set_status("idle")
+        serial_bridge.lights_off()
+        return render_template("partials/status.html",
+                               status="error",
+                               message="Capture failed. Please try again."), 500
+
+    serial_bridge.lights_off()
+    return _analyse_and_render(capture_path, pil_image)
+
+
+@app.route("/api/browser-preview", methods=["GET", "POST"])
+def browser_preview():
+    """Hand back the browser-camera UI. No server hardware is touched."""
+    session["state"] = "scanning"
+    session["capture_path"] = None
+    session["result"] = None
+    return render_template("partials/browser_preview.html")
+
+
+@app.route("/api/capture-upload", methods=["POST"])
+def capture_upload():
+    """Analyse a frame captured by the visitor's own browser.
+
+    cv2.VideoCapture opens a device on the machine running Python, so a hosted
+    server can never reach a client's webcam. In browser mode the page grabs
+    the frame with getUserMedia and posts it here instead.
+    """
+    uploaded = request.files.get("image")
+    if uploaded is None or not uploaded.filename:
+        return render_template("partials/status.html",
+                               status="error",
+                               message="No image received. Please try again."), 400
+
+    try:
+        pil_image = Image.open(uploaded.stream)
+        pil_image = pil_image.convert("RGB")
+    except Exception as e:
+        logger.error(f"Upload decode error: {e}")
+        return render_template("partials/status.html",
+                               status="error",
+                               message="That file could not be read as an image."), 400
+
+    filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    capture_path = os.path.join(CAPTURES_DIR, filename)
+    pil_image.save(capture_path, "JPEG", quality=JPEG_QUALITY)
+
+    return _analyse_and_render(capture_path, pil_image)
 
 
 @app.route("/api/report/<report_id>")

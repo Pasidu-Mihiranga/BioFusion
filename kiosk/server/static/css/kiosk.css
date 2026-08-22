@@ -769,6 +769,25 @@ body {
     to { transform: rotate(360deg); }
 }
 
+/* ─── Browser camera ─────────────────────────────────────────────────────── */
+/* <video> is inline by default, unlike the <img> it stands in for. */
+#browser-video {
+    display: block;
+    background: #000;
+}
+
+.browser-camera-fallback {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.browser-camera-fallback .btn {
+    cursor: pointer;
+}
+
 /* ─── State transitions ──────────────────────────────────────────────────── */
 /* htmx holds .htmx-swapping on the target for the duration declared by
    hx-swap="innerHTML swap:0.18s", which gives the outgoing state a fade-out to

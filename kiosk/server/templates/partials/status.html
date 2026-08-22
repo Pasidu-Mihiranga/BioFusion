@@ -37,7 +37,7 @@
                 a report you can download instantly.
             </p>
             <button class="btn btn-scan"
-                    hx-post="/api/scan"
+                    hx-post="{{ scan_endpoint }}"
                     hx-target="#kiosk-content"
                     hx-swap="innerHTML swap:0.18s"
                     hx-indicator="#loading-indicator">

@@ -1,0 +1,39 @@
+<!-- Browser capture: the visitor's own camera, used when this server has none -->
+<div class="kiosk-state state-preview" id="state-preview">
+    <div class="preview-container" id="browser-camera">
+        <h2 class="state-title">
+            <span class="recording-dot"></span>
+            Camera preview
+        </h2>
+        <p class="state-description">Point your camera at the X-ray and press Capture when it fills the frame</p>
+
+        <div class="preview-frame">
+            <video id="browser-video" class="preview-image" playsinline autoplay muted></video>
+            <div class="preview-crosshair"></div>
+        </div>
+
+        <!-- Frame grab target; never shown -->
+        <canvas id="browser-canvas" hidden></canvas>
+
+        <!-- Shown only if the camera is unavailable or permission is refused -->
+        <div class="browser-camera-fallback" id="browser-camera-fallback" hidden>
+            <p class="state-description" id="browser-camera-error"></p>
+            <label class="btn btn-scan" for="browser-file">
+                Choose an X-ray image
+                <input type="file" id="browser-file" accept="image/*" hidden>
+            </label>
+        </div>
+
+        <div class="preview-actions">
+            <button class="btn btn-capture" id="browser-capture">
+                Capture →
+            </button>
+            <button class="btn btn-cancel"
+                    hx-post="/api/reset"
+                    hx-target="#kiosk-content"
+                    hx-swap="innerHTML swap:0.18s">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>

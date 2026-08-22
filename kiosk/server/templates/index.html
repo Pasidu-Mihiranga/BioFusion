@@ -50,12 +50,16 @@
                 <span class="idle-badge">Kiosk screening mode</span>
                 <h2 class="idle-title">Screen a chest X-ray<br>for pneumonia in seconds.</h2>
                 <p class="idle-description">
+                    {% if capture_mode == 'browser' %}
+                    Press Start, then point your camera at the X-ray.
+                    {% else %}
                     Position the X-ray under the camera and press Start.
+                    {% endif %}
                     The AI model highlights signs of pneumonia and generates
                     a report you can download instantly.
                 </p>
                 <button class="btn btn-scan"
-                        hx-post="/api/scan"
+                        hx-post="{{ scan_endpoint }}"
                         hx-target="#kiosk-content"
                         hx-swap="innerHTML swap:0.18s"
                         hx-indicator="#loading-indicator">

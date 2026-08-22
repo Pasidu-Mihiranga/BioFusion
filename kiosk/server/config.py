@@ -11,6 +11,16 @@ BAUD_RATE = int(os.environ.get("KIOSK_BAUD_RATE", "115200"))
 SERIAL_TIMEOUT = 2  # seconds
 
 # ─── Camera ──────────────────────────────────────────────────────────────────
+# How the X-ray photo is taken:
+#   hardware — cv2.VideoCapture on this machine (the kiosk cabinet's own webcam)
+#   browser  — the visitor's own camera via getUserMedia; the browser uploads
+#              the frame and this server only runs inference
+#   auto     — hardware if this machine has a video device, else browser
+# cv2.VideoCapture always opens a device on the machine running Python, so a
+# hosted deployment cannot reach a client's webcam; that is what browser mode
+# is for.
+CAPTURE_MODE = os.environ.get("KIOSK_CAPTURE_MODE", "auto").lower()
+
 CAMERA_INDEX = int(os.environ.get("KIOSK_CAMERA_INDEX", "2"))
 CAPTURE_WIDTH = 1920
 CAPTURE_HEIGHT = 1080
