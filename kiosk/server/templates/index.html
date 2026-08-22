@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gmora-Pneumoscan — Pneumonia Screening</title>
     <meta name="description" content="AI-assisted pneumonia screening kiosk for hospitals">
-    <link rel="stylesheet" href="/static/css/kiosk.css">
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <link rel="stylesheet" href="/static/css/kiosk.css?v={{ asset_v }}">
+    <script src="/static/js/htmx.min.js?v={{ asset_v }}" defer></script>
 </head>
 <body>
     <!-- ─── Header ──────────────────────────────────────────────────────── -->
@@ -57,7 +57,7 @@
                 <button class="btn btn-scan"
                         hx-post="/api/scan"
                         hx-target="#kiosk-content"
-                        hx-swap="innerHTML"
+                        hx-swap="innerHTML swap:0.18s"
                         hx-indicator="#loading-indicator">
                     Start screening →
                 </button>
@@ -84,6 +84,6 @@
         BioFusion 2026 · Team GMora · Screening aid, not a diagnostic device
     </footer>
 
-    <script src="/static/js/kiosk.js"></script>
+    <script src="/static/js/kiosk.js?v={{ asset_v }}" defer></script>
 </body>
 </html>

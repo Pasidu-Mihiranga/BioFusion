@@ -14,7 +14,7 @@
             <button class="btn btn-scan"
                     hx-post="/api/reset"
                     hx-target="#kiosk-content"
-                    hx-swap="innerHTML">
+                    hx-swap="innerHTML swap:0.18s">
                 Try again →
             </button>
         {% elif status == 'idle' %}
@@ -39,7 +39,7 @@
             <button class="btn btn-scan"
                     hx-post="/api/scan"
                     hx-target="#kiosk-content"
-                    hx-swap="innerHTML"
+                    hx-swap="innerHTML swap:0.18s"
                     hx-indicator="#loading-indicator">
                 Start screening →
             </button>

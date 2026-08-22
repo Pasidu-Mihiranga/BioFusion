@@ -175,6 +175,45 @@ _GLOBAL_CSS = """
     50% { opacity: 0.5; }
   }
   .bf-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+  /* ─── Interaction transitions ─────────────────────────────────────────────
+     Deliberately transitions only, no entry animations: Streamlit rebuilds the
+     DOM on every rerun, so an entry animation would re-fire whenever any
+     unrelated widget is touched and read as flicker. State-driven transitions
+     are safe because they only run when a property actually changes. */
+  html { scroll-behavior: smooth; }
+
+  .stApp .stButton > button,
+  .stApp .stDownloadButton > button,
+  .stApp [data-testid="stFileUploader"] section {
+    transition: background-color 0.18s ease, border-color 0.18s ease,
+                color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  }
+  .stApp .stButton > button:active,
+  .stApp .stDownloadButton > button:active { transform: translateY(1px); }
+  .stApp [data-testid="stFileUploader"] section:hover { border-color: var(--primary); }
+
+  .bf-card {
+    transition: box-shadow 0.25s cubic-bezier(0.4,0,0.2,1),
+                border-color 0.25s cubic-bezier(0.4,0,0.2,1),
+                transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  }
+  .bf-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(0,0,0,0.15);
+    box-shadow: 0 12px 20px -4px rgba(0,0,0,0.12), 0 6px 8px -3px rgba(0,0,0,0.08);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .stApp .stButton > button,
+    .stApp .stDownloadButton > button,
+    .stApp [data-testid="stFileUploader"] section,
+    .bf-card { transition: none; }
+    .stApp .stButton > button:active,
+    .stApp .stDownloadButton > button:active,
+    .bf-card:hover { transform: none; }
+  }
 </style>
 """
 

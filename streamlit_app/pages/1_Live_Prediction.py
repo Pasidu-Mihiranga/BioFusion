@@ -10,6 +10,7 @@ guidance, never as a diagnosis.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,24 +23,52 @@ from utils import (load_model, predict, preprocess_image, load_image,
                    assess_quality, triage, ui)
 import importlib
 importlib.reload(ui)
-from utils.device import is_mobile, render_mobile_navbar
+from utils.device import is_mobile, init_device, render_mobile_navbar
 
 st.set_page_config(page_title="Screening | BioFusion", page_icon="🫁",
                    layout="wide", initial_sidebar_state="collapsed")
 
+# Probe the viewport once per run, before any is_mobile() call.
+init_device()
+
 ui.inject_theme()
 ui.top_nav(active="Screening")
+
+# Fixed-position navbar, so DOM order is irrelevant to placement. Rendering it
+# ahead of get_model() keeps it on screen while the model is still loading.
+if is_mobile():
+    render_mobile_navbar("Prediction")
 if not is_mobile():
     st.divider()
 
 # --- model + fail-safe threshold ------------------------------------------- #
-WEIGHTS_PATH = Path(__file__).parent.parent.parent / "pneumonia_resnet50_best.pth"
+REPO_ROOT = Path(__file__).parent.parent.parent
+MODELS_DIR = Path(os.environ.get("BIOFUSION_MODELS_DIR", REPO_ROOT / "models"))
+
+# Two checkpoints, matched to how the image was captured. The phone-augmented
+# model was trained with phone-photo augmentation so it tolerates glare, skew
+# and screen moire; the other was trained without it and suits clean digital
+# radiographs.
+WEIGHTS = {
+    "photo":  MODELS_DIR / "pneumonia_resnet50_best.pth",
+    "direct": MODELS_DIR / "pneumonia_resnet50_combined_noPhone.pth",
+}
+# Older single-checkpoint layout, kept so a local checkout without models/ works.
+LEGACY_WEIGHTS = REPO_ROOT / "pneumonia_resnet50_best.pth"
 METRICS_PATH = Path(__file__).parent.parent.parent / "training_metrics.json"
 
 
 @st.cache_resource
-def get_model():
-    weights = str(WEIGHTS_PATH) if WEIGHTS_PATH.exists() else None
+def get_model(kind: str):
+    """Load the checkpoint for `kind` ("photo" or "direct"), cached per kind.
+
+    Cached per kind rather than globally so only the models actually used are
+    resident — each ResNet50 is ~100MB and the droplet has under 1GB of RAM.
+    """
+    path = WEIGHTS[kind]
+    if not path.exists() and LEGACY_WEIGHTS.exists():
+        path = LEGACY_WEIGHTS
+    weights = str(path) if path.exists() else None
     model, device = load_model(weights)
     return model, device, weights is not None
 
@@ -56,8 +85,6 @@ def get_threshold():
     return 0.5
 
 
-with st.spinner("Starting the screening engine…"):
-    model, device, using_trained_weights = get_model()
 threshold = get_threshold()
 
 # --- flow control ----------------------------------------------------------- #
@@ -80,6 +107,11 @@ def run_analysis_and_render_results(captured, is_photo, clinician, mobile):
 
     # 3 · Staged analysis animation
     state = {}
+
+    # The capture path decides the checkpoint: photos of film go to the
+    # phone-augmented model, digital uploads to the direct-radiograph one.
+    with st.spinner("Starting the screening engine…"):
+        model, device, _trained = get_model("photo" if is_photo else "direct")
 
     def _prepare():
         if is_photo:
@@ -178,8 +210,6 @@ if mobile:
     if st.session_state.mobile_step == 1:
         ui.page_header("Chest X-ray screening", "Take a photo or upload an X-ray to check for signs of pneumonia.")
         
-        if not using_trained_weights:
-            st.markdown("<p style='color: #ea580c; text-align: center; font-weight: 500; font-size: 14px;'><svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#ea580c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' style='margin-bottom:-2px; margin-right:4px;'><path d='M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/><line x1='12' y1='9' x2='12' y2='13'/><line x1='12' y1='17' x2='12.01' y2='17'/></svg>Demo mode: trained weights not found — running on raw ImageNet weights, so predictions are not clinically meaningful.</p>", unsafe_allow_html=True)
         
         if "role" not in st.session_state:
             st.session_state.role = ui.ROLE_PATIENT
@@ -403,14 +433,11 @@ if mobile:
                 st.session_state.mobile_captured_bytes = None
                 st.rerun()
 
-    render_mobile_navbar("Prediction")
 
 else:
     # --- Desktop Single-Page Flow ---
     ui.page_header("Chest X-ray screening", "Take a photo or upload an X-ray to check for signs of pneumonia.")
 
-    if not using_trained_weights:
-        st.markdown("<p style='color: #ea580c; font-weight: 500; font-size: 14px; margin-bottom: 1.5rem;'><svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='#ea580c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' style='margin-bottom:-2px; margin-right:4px;'><path d='M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/><line x1='12' y1='9' x2='12' y2='13'/><line x1='12' y1='17' x2='12.01' y2='17'/></svg>Demo mode: trained weights not found — running on raw ImageNet weights, so predictions are not clinically meaningful.</p>", unsafe_allow_html=True)
 
     with st.container(key="section_role"):
         st.markdown("<div class='bf-step-badge'>Step 1</div>", unsafe_allow_html=True)

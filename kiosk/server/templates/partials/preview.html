@@ -16,14 +16,14 @@
             <button class="btn btn-capture"
                     hx-post="/api/capture"
                     hx-target="#kiosk-content"
-                    hx-swap="innerHTML"
+                    hx-swap="innerHTML swap:0.18s"
                     hx-indicator="#loading-indicator">
                 Capture →
             </button>
             <button class="btn btn-cancel"
                     hx-post="/api/cancel"
                     hx-target="#kiosk-content"
-                    hx-swap="innerHTML">
+                    hx-swap="innerHTML swap:0.18s">
                 Cancel
             </button>
         </div>

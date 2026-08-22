@@ -1,19 +1,39 @@
 import streamlit as st
 from streamlit_javascript import st_javascript
 
+MOBILE_BREAKPOINT = 768
+
+
+def init_device():
+    """Probe the viewport width once per script run.
+
+    Call this once near the top of every page, after st.set_page_config and
+    before anything that calls is_mobile().
+
+    st_javascript mounts a frontend component and returns its default (0) until
+    the browser answers on a later rerun. Probing from inside is_mobile() meant
+    every call site mounted another component with identical parameters, and
+    Streamlit derives a component's element ID from its type plus parameters —
+    so the second call of a run raised StreamlitDuplicateElementId. Keeping the
+    probe in one place means at most one component instance per run.
+    """
+    if st.session_state.get('device_resolved'):
+        return
+
+    window_width = st_javascript("window.innerWidth", key="bf_viewport_probe")
+
+    # Falsy until the browser round-trip completes; retry on the next rerun.
+    if window_width and window_width > 0:
+        st.session_state['is_mobile'] = window_width < MOBILE_BREAKPOINT
+        st.session_state['device_resolved'] = True
+
+
 def is_mobile():
-    """Detect if the current device is mobile based on screen width."""
-    if 'is_mobile' not in st.session_state:
-        # Evaluate window width using javascript
-        window_width = st_javascript("window.innerWidth", key="device_width_js")
-        
-        # st_javascript returns 0 on first render before JS executes.
-        # We assume desktop on first render, then update when width is captured.
-        if window_width and window_width > 0:
-            st.session_state['is_mobile'] = window_width < 768
-        else:
-            return False # Default fallback before JS runs
-            
+    """Whether the viewport is phone-sized.
+
+    Pure session_state read — assumes desktop until the probe started by
+    init_device() reports back, which happens on the following rerun.
+    """
     return st.session_state.get('is_mobile', False)
 
 def render_mobile_navbar(current_page="Prediction"):
